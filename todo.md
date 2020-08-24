@@ -1,0 +1,7 @@
+- [ ] lexing
+- [ ] parsing
+- [ ] errors
+- [ ] backend
+- [ ] link and generate programs
+- [ ] read headers
+- [ ] tests
