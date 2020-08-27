@@ -1,19 +1,19 @@
 	.file	"peace.c"
 	.text
-	.section	.rodata.str1.1,"aMS",@progbits,1
+	.section	.rodata
 .LC0:
 	.string	"peace"
-	.section	.text.startup,"ax",@progbits
-	.p2align 4
+	.text
 	.globl	main
 	.type	main, @function
 main:
 	endbr64
-	subq	$8, %rsp
+	pushq	%rbp
+	movq	%rsp, %rbp
 	leaq	.LC0(%rip), %rdi
 	call	puts@PLT
-	xorl	%eax, %eax
-	addq	$8, %rsp
+	movl	$0, %eax
+	popq	%rbp
 	ret
 	.size	main, .-main
 	.ident	"GCC: (Ubuntu 9.3.0-10ubuntu2) 9.3.0"

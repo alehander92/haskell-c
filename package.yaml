@@ -25,6 +25,7 @@ dependencies:
 # - paths
 - filepath
 - mtl
+- ghc
 
 library:
   source-dirs: src
