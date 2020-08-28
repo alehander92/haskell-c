@@ -42,9 +42,9 @@ data AInstruction =
   ALoadStringConst Int
     deriving Show
 
-type AConst = [AConstSection] -- AConst { sections :: [AConstSection], map :: Map T.Text Int }
+type AConst = [AConstSection] -- deriving Show -- AConst { sections :: [AConstSection], map :: Map T.Text Int }
 
-data AConstSection = AConstSection (Int, [T.Text])
+data AConstSection = AConstSection (Int, [T.Text]) deriving Show
 
 data AIR = AIR (Node Location, AConst, [AInstruction]) deriving Show
 
@@ -54,7 +54,8 @@ data AsmInstruction =
   AsmMov AsmLocation AsmLocation |
   AsmLoad AsmValue |
   AsmMovq AsmLocation |
-  AsmLeaq AsmLocation AsmLocation 
+  AsmLeaq AsmLocation AsmLocation |
+  AsmCall AsmLocation
 
     deriving Show
 
@@ -76,7 +77,8 @@ data AsmLocation =
   ALReg Register |
   ALInt Int |
   ALLabel T.Text |
-  ALAddress T.Text Register
+  ALAddress T.Text Register |
+  ALSymbol T.Text
     deriving Show
 
 data Register =
@@ -335,17 +337,18 @@ loadFunctions _ =
 -- asm and generate 
 generateAIR :: Either Error (AConst, [AInstruction]) -> Node Location -> Either Error (AConst, [AInstruction])
 generateAIR (Right (c, a)) (Call (Name name _) [] _) =
-  Right $ (c, a ++ [ACall name])
+  Right $ (c, a ++ [ACall (trace (show name) name)])
 
 generateAIR (Right (c, a)) (Call (Name name _) [arg] _) =
-  let argIR = generateAIR (Right []) arg  in
+  let argIR = generateAIR (Right (c, [])) arg  in    
   case argIR of
-    Right ir -> Right $ (c, a ++ ir ++ [ACall name])
+    Right (c', ir) -> Right $ (c', a ++ ir ++ [ACall name])
     Left error -> Left error
 
-generateAIR (Right c, a) (Text value _) =
+generateAIR (Right (c, a)) (Text value _) =
   let id = length c in
-  let c' = c ++ [(id, [value])] in
+  let c' = (c ++ [AConstSection (id, [value])]) in
+  
   Right $ (c', a ++ [ALoadStringConst id])
 
 generateAIR (Left error) _ =
@@ -362,7 +365,7 @@ generateIR :: Node Location -> Either Error AIR
 generateIR (Function (TypeName typeName _) (Name functionName nameLocation) args code location) =
   let airList = generateAIRList code in
   case airList of
-    Right (list, c) ->
+    Right (c, list) ->
       Right $ AIR ((Name functionName nameLocation), c, list)
     Left error ->
       Left error
@@ -375,7 +378,7 @@ generateIR _ =
 
 
 
-toStringLabel :: Int -> AsmValue
+toStringLabel :: Int -> T.Text
 toStringLabel id = pack $ ".String" ++ (show id)
 
 -- https://stackoverflow.com/a/5329669/438099
@@ -385,16 +388,17 @@ generateAsmInstructions (Left error) _ =
 
 generateAsmInstructions (Right a) (ACall name) =
   -- TODO location
-  Left $ Error (AsmError, pack "call not supported", Location ((Line 0), (Column 0)))
+  Right $ a ++ [AsmCall (ALSymbol name)]
+  -- Left $ Error (AsmError, pack "call not supported", Location ((Line 0), (Column 0)))
 
 generateAsmInstructions (Right a) (ALoadString id) =
   Left $ Error (AsmError, pack "load_string not expected here", Location ((Line 0), (Column 0)))
 
 generateAsmInstructions (Right a) (ALoadStringConst id) =
-  Right $ a ++ [AsmLeaq $ ALAddress (toStringLabel id) RIP $ RDI]
+  Right $ a ++ [AsmLeaq (ALAddress (toStringLabel id) RIP) (ALReg RDI)]
 
 generateAsmFunction :: AIR -> Either Error Asm
-generateAsmFunction (AIR (node, a)) =
+generateAsmFunction (AIR (node, c, a)) =
   let instructions = (foldl generateAsmInstructions $ Right []) a :: (Either Error [AsmInstruction]) in 
   case instructions of
     Right instructions' -> Right $ Asm (node, instructions')
