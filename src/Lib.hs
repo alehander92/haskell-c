@@ -53,9 +53,14 @@ data AIR = AIR (Node Location, AConst, [AInstruction]) deriving Show
 data AsmInstruction =
   AsmMov AsmLocation AsmLocation |
   AsmLoad AsmValue |
-  AsmMovq AsmLocation |
   AsmLeaq AsmLocation AsmLocation |
-  AsmCall AsmLocation
+  AsmCall AsmLocation |
+  AsmEndbr64 |
+  AsmMovq AsmLocation AsmLocation |
+  AsmMovl AsmLocation AsmLocation |
+  AsmPopq AsmLocation |
+  AsmPushq AsmLocation |
+  AsmRet
 
     deriving Show
 
@@ -95,7 +100,8 @@ data Register =
   SP |
   RSP |
   DI |
-  RDI
+  RDI |
+  RBP
     deriving Show
 
 newtype Line = Line Int deriving Show
@@ -407,13 +413,27 @@ generateAsmFunction (AIR (node, c, a)) =
 generateIRList :: [Node Location] -> Either Error [AIR]
 generateIRList = mapM generateIR
 
+genProgramAsm :: [Asm] -> [Asm]
+genProgramAsm a = map genFunctionAsm a
+
+genFunctionAsm :: Asm -> Asm
+genFunctionAsm (Asm (node, instructions)) =
+  Asm (node, ([
+    AsmEndbr64,
+    (AsmPushq $ ALReg RBP),
+    (AsmMovq (ALReg RSP) (ALReg RBP)) ] ++ instructions ++
+    [(AsmMovl (ALInt 0) $ ALReg EAX),
+     (AsmPopq $ ALReg RBP),
+     AsmRet ])
+  )
+  
 generateAsmAndCompile :: Options -> [AIR] -> IO ()
 generateAsmAndCompile _ air = do
   let a = mapM generateAsmFunction air
   print air
   case a of
     Right a' -> do
-      let asmObject = AsmObject (pack "peace.asm", a')
+      let asmObject = AsmObject (pack "peace.asm", genProgramAsm a')
       print asmObject
     Left error -> print error
 
