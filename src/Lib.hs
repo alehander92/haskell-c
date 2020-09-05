@@ -66,7 +66,7 @@ data AsmInstruction =
 
 data Asm = Asm (Node Location, [AsmInstruction]) deriving Show
 
-data AsmObject = AsmObject (T.Text, [Asm]) deriving Show
+data AsmObject = AsmObject (T.Text, AConst,[Asm]) deriving Show
 
 data ErrorType =
   LexError |
@@ -426,15 +426,97 @@ genFunctionAsm (Asm (node, instructions)) =
      (AsmPopq $ ALReg RBP),
      AsmRet ])
   )
+
+
+-- indent text for assembly generation with tabs
+indent :: Int -> T.Text -> T.Text
+indent 0 text =
+  text
+indent offset text =
+  if offset > 0 then
+    "\t" <> (indent offset - 1 text)
+  else
+    text
+
+-- generate assembly for a function
+-- 
+-- <name>:
+--     <ins>
+--     <ins>
+--
+-- based on `gcc`-s asm ouput
+-- gcc -S -O0 -fno-asynchronous-unwind-tables -o peace.asm peace.c
+toTextAsm :: Asm -> T.Text
+toTextAsm Asm (name, instructions) =
+  let nameText = name <> (pack ":\n") in
+  let insText = foldl (\text instruction -> (indent 1 $ toTextI instruction) <> nl) instructions ""  in
+  nameText <> insText
+
+tab :: T.Text
+tab = pack "\t"
+
+nl :: T.Text
+nl = pack "\n"
+
+toTextV :: AsmValue -> T.Text
+toTextV value = (pack . show) value
+
+toTextL :: AsmLocation -> T.Text
+-- %r
+toTextL ALReg r = (pack "%") <> (pack . show) r
+-- $i
+toTextL ALInt i = (pack "$") <> (pack . show) i
+-- t
+toTextL ALLabel t = t
+-- .text(%r)
+toTextL ALAddress text r = (pack ".") <> text <> (pack "(") <> (pack "%") <> (pack . show) r <> (pack ")")
+-- text
+toTextL ALSymbol text = text
+
+toTextI :: AsmInstruction -> T.Text
+toTextI AsmEndbr64 = pack "endbr64"
+toTextI AsmMov l r = (pack "mov\t") <> (toTextL l) <> tab <> (toTextL r)
+toTextI AsmLoad v = (pack "load\t") <> (toTextV v)
+toTextI AsmLeaq l r = (pack "leaq\t") <> (toTextL l) <> tab <> (toTextL r)
+toTextI AsmCall function = (pack "call\t") <> (toTextL function)
+toTextI AsmMovq l r = (pack "movq\t") <> (toTextL l) <> tab <> (toTextL r)
+toTextI AsmMovl l r = (pack "movl\t") <> (toTextL l) <> tab <> (toTextL r)
+toTextI AsmPopq location = (pack "popq\t") <> (toTextL location)
+toTextI AsmPushq location = (pack "pushq\t") <> (toTextL location)
+toTextI AsmRet = pack "ret"
+
+-- .String<id>:
+--    .string "<string>""
+toTextSection :: AConstSection -> T.Text
+toTextSection AConstSection (id, data) =
+  pack "TODO"
+
+--     .text
+--     .section rodata
+-- .String<id>:
+--     .string "<string>"
+toTextConst :: AConst -> T.Text
+toTextConst a =
+  (indent 1 (pack ".text")) <> nl <>
+    (indent 1 (pack ".section rodata")) <> nl <>
+    (foldl (\text section -> text <> nl <> (toTextSection section)) a (pack ""))
   
+
+toText :: AsmObject -> T.Text
+toText AsmObject (filename, const, a)=
+  toTextConst const <>
+    foldl (\text line -> text <> line <> nl) (map toTextAsm a) (pack "")
+
 generateAsmAndCompile :: Options -> [AIR] -> IO ()
-generateAsmAndCompile _ air = do
+generateAsmAndCompile _ air @ (_, const, _) = do
   let a = mapM generateAsmFunction air
   print air
   case a of
     Right a' -> do
-      let asmObject = AsmObject (pack "peace.asm", genProgramAsm a')
+      let asmObject = AsmObject (pack "peace.asm", const, genProgramAsm a')
       print asmObject
+      let text = toText asmObject
+      print text
     Left error -> print error
 
 generateIRAndCompile :: Options -> Node Location -> IO ()
